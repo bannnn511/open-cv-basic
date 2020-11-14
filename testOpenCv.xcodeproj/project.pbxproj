@@ -41,7 +41,7 @@
 		354FEA572544408E0033C9FA = {
 			isa = PBXGroup;
 			children = (
-				354FEA622544408E0033C9FA /* testOpenCv */,
+				354FEA622544408E0033C9FA /* openCv */,
 				354FEA612544408E0033C9FA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,12 +54,12 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		354FEA622544408E0033C9FA /* testOpenCv */ = {
+		354FEA622544408E0033C9FA /* openCv */ = {
 			isa = PBXGroup;
 			children = (
 				354FEA632544408E0033C9FA /* main.cpp */,
 			);
-			path = testOpenCv;
+			path = openCv;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
