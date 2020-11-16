@@ -148,6 +148,10 @@ void averageFilterOperator(int pos, void*) {
   unsigned long widthStep = image.step[0];
   unsigned long nChannels = image.step[1];
 
+  if (slider % 2 == 0) {
+    slider++;
+    // slider = slider < 3 ? 3 : slider;
+  }
   int kHalfSize = slider / 2;
 
   vector<unsigned long> offsets;
@@ -193,17 +197,21 @@ void gaussianFilterOperator(int pos, void*) {
   unsigned long widthStep = image.step[0];
   unsigned long nChannels = image.step[1];
 
-  float sigma = 1.4;
+  float sigma = 1.8;
+  // if (slider % 2 == 0) {
+  //   slider++;
+  //   slider = slider < 3 ? 3 : slider;
+  // }
   int kHalfSize = slider / 2;
 
-  vector<tuple<unsigned long, unsigned long>> offsets;
+  vector<tuple<int, float>> offsets;
   float gauSum = 0;
   for (int y = -kHalfSize; y <= kHalfSize; y++) {
     for (int x = -kHalfSize; x <= kHalfSize; x++) {
-      float gaus = (1 / (2 * M_PI * sigma * sigma)) * 2.71828182846 -
-                   ((x * x + y * y) / (2 * sigma * sigma));
-      gauSum += gaus;
-      offsets.push_back(make_tuple(y * widthStep + x * nChannels, gaus));
+      float gauss = (1 / (2 * M_PI * sigma * sigma)) *
+                   exp(-((x * x + y * y) / (2 * sigma * sigma)));
+      gauSum += gauss;
+      offsets.push_back(make_tuple(y * widthStep + x * nChannels, gauss));
     }
   }
 
@@ -222,11 +230,12 @@ void gaussianFilterOperator(int pos, void*) {
     for (int x = xStart; x <= xEnd;
          x++, pSrcRow += nChannels, pDstRow += nChannels) {
       for (int i = 0; i < nChannels; i++) {
-        int avg = 0;
-        for (int k = 0; k < n; k++)
+        float avg = 0;
+        for (int k = 0; k < n; k++) {
           avg +=
-              ((get<1>(offsets[1]) * pSrcRow[i + get<0>(offsets[k])]) / gauSum);
-        pDstRow[i] = (uchar)(avg / n);
+              ((get<1>(offsets[k]) * pSrcRow[i + get<0>(offsets[k])]) / gauSum);
+        }
+        pDstRow[i] = (uchar)(avg);
       }
     }
   }
