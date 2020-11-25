@@ -7,14 +7,12 @@
 
 #include <iostream>
 #include <string>
-#include <math.h>
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgcodecs/imgcodecs.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/video/video.hpp"
-#include "opencv2/core/core_c.h"
 
 using namespace cv;
 using namespace std;
@@ -34,7 +32,6 @@ void changeContrast(int pos, void*);
 void averageFilterOperator(int pos, void*);
 void gaussianFilterOperator(int pos, void*);
 void detectEdge(Mat& srcImage, Mat& dstImage);
-void addNoise(Mat& srcImage);
 
 // MARK:- MAIN
 int main(int argc, char* argv[]) {
@@ -44,9 +41,6 @@ int main(int argc, char* argv[]) {
   if (argv[1] != NULL) {
     // image = imread("/Users/apple/Documents/Stduy/openCv/testOpenCv/ic2.tif");
     image = imread(argv[2]);
-    if (image.data == NULL) {
-      cout << "Need image location" << endl;
-    }
     if (strcmp(argv[1], "-rgb2gray") == 0) {
       grayImage = getGrayScaleImage(image);
       imshow("Show_Image", grayImage);
@@ -70,19 +64,12 @@ int main(int argc, char* argv[]) {
                      gaussianFilterOperator);
       slider = 3;
       gaussianFilterOperator(slider, 0);
-    } else if (strcmp(argv[1], "-addnoise") == 0){
-      image = getGrayScaleImage(image);
-      addNoise(image);
-    } 
-    else if (strcmp(argv[1], "-denoise") == 0) {
-      slider = 5;
-      image = getGrayScaleImage(image);
-      averageFilterOperator(slider, 0);
-    } else if (strcmp(argv[1], "-edges") == 0) {
+    } else if (strcmp(argv[1], "denoise") == 0) {
       slider = 3;
-      image = getGrayScaleImage(image);
       gaussianFilterOperator(slider, 0);
-      detectEdge(image, dst);
+      // create gray scale image
+      grayImage = getGrayScaleImage(image);
+      detectEdge(grayImage, dst);
     }
   }
 
@@ -199,7 +186,7 @@ void averageFilterOperator(int pos, void*) {
   imshow("Show_Image", dst);
 }
 
-// MARK:- Gaussian Filter
+// MARK:- Guassian Filter
 void gaussianFilterOperator(int pos, void*) {
   if (image.data == NULL || image.rows <= 0 || image.cols <= 0) return;
 
@@ -268,8 +255,7 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
   Mat gradientY = Mat(srcImage.size(), srcImage.type());
 
   int offsets[9] = {
-      -widthStep - 1, -widthStep, -widthStep + 1,
-       -1, 0, 1,
+      -widthStep - 1, -widthStep, -widthStep + 1, -1, 0, 1,
       widthStep - 1,  widthStep,  widthStep + 1,
   };
 
@@ -285,10 +271,8 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
   uchar* pDstData =
       (uchar*)dstImage.data + yStart * widthStep + xStart * nChannels;
 
-  // kernel size
   unsigned long n = 9;
-  vector<tuple<float, float>> edges; // magnitude and direction
-  // convolution step
+
   for (int y = yStart; y <= yEnd;
        y++, pSrcData += widthStep, pDstData += widthStep) {
     const uchar* pSrcRow = pSrcData;
@@ -296,31 +280,17 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
     for (int x = xStart; x <= xEnd;
          x++, pSrcRow += nChannels, pDstRow += nChannels) {
       for (int i = 0; i < nChannels; i++) {
-        float gx = 0, gy = 0;
+        int gx = 0, gy = 0;
         for (int k = 0; k < n; k++) {
           gx += kernelX[k] * pSrcRow[i + offsets[k]];
           gy += kernelY[k] * pSrcRow[i + offsets[k]];
         }
-        // edge gradient
-        int g = sqrt(gx * gx + gy * gy); 
-        // edge directions are classified into four group of angles 0, 45, 90, 135 degrees
-        float angle =  round((atan(gx / gy)) / 45) * 45;
-        // if (g > 80) {
-        //   pDstRow[0] = 255;
-        // }
-        // pDstRow[0] = g;
-        edges.push_back(make_tuple(g, angle));
+        int g = sqrt(gx * gx + gy * gy);
+        if (g > 80) {
+          pDstRow[0] = 255;
+        }
       }
     }
   }
-
-
   imshow("Show_Image", dstImage);
-}
-
-void addNoise(Mat& srcImage) {
-  Mat noise = Mat(srcImage.size(), srcImage.type());
-  randn(noise, 0, 20);
-  srcImage = srcImage + noise;
-  imshow("Show_Image", srcImage);
 }
