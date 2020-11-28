@@ -5,16 +5,17 @@
 //  Created by An on 10/24/20.
 //
 
-#include <iostream>
-#include <string>
 #include <math.h>
 
+#include <iostream>
+#include <string>
+
 #include "opencv2/core/core.hpp"
+#include "opencv2/core/core_c.h"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgcodecs/imgcodecs.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/video/video.hpp"
-#include "opencv2/core/core_c.h"
 
 using namespace cv;
 using namespace std;
@@ -70,11 +71,10 @@ int main(int argc, char* argv[]) {
                      gaussianFilterOperator);
       slider = 3;
       gaussianFilterOperator(slider, 0);
-    } else if (strcmp(argv[1], "-addnoise") == 0){
+    } else if (strcmp(argv[1], "-addnoise") == 0) {
       image = getGrayScaleImage(image);
       addNoise(image);
-    } 
-    else if (strcmp(argv[1], "-denoise") == 0) {
+    } else if (strcmp(argv[1], "-denoise") == 0) {
       slider = 5;
       image = getGrayScaleImage(image);
       averageFilterOperator(slider, 0);
@@ -222,7 +222,7 @@ void gaussianFilterOperator(int pos, void*) {
   for (int y = -kHalfSize; y <= kHalfSize; y++) {
     for (int x = -kHalfSize; x <= kHalfSize; x++) {
       float gauss = (1 / (2 * M_PI * sigma * sigma)) *
-                   exp(-((x * x + y * y) / (2 * sigma * sigma)));
+                    exp(-((x * x + y * y) / (2 * sigma * sigma)));
       gauSum += gauss;
       offsets.push_back(make_tuple(y * widthStep + x * nChannels, gauss));
     }
@@ -260,6 +260,7 @@ void gaussianFilterOperator(int pos, void*) {
 void detectEdge(Mat& srcImage, Mat& dstImage) {
   if (srcImage.data == NULL || srcImage.rows <= 0 || srcImage.cols <= 0) return;
 
+  int highThreshold = 91, lowThreshold = 31;
   dstImage = Mat(srcImage.size(), srcImage.type());
   int width = srcImage.cols, height = srcImage.rows;
   int widthStep = srcImage.step[0];
@@ -268,8 +269,7 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
   Mat gradientY = Mat(srcImage.size(), srcImage.type());
 
   int offsets[9] = {
-      -widthStep - 1, -widthStep, -widthStep + 1,
-       -1, 0, 1,
+      -widthStep - 1, -widthStep, -widthStep + 1, -1, 0, 1,
       widthStep - 1,  widthStep,  widthStep + 1,
   };
 
@@ -280,21 +280,25 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
   int xStart = 1, yStart = 1;
   int xEnd = width - 1, yEnd = height - 1;
 
+  Mat gradientDirection = image.clone();  // image that save direction
   const uchar* pSrcData =
       (uchar*)srcImage.data + yStart * widthStep + xStart * nChannels;
   uchar* pDstData =
       (uchar*)dstImage.data + yStart * widthStep + xStart * nChannels;
+  uchar* pDirData =
+      (uchar*)gradientDirection.data + yStart * widthStep + xStart * nChannels;
 
   // kernel size
   unsigned long n = 9;
-  vector<tuple<float, float>> edges; // magnitude and direction
+
   // convolution step
-  for (int y = yStart; y <= yEnd;
-       y++, pSrcData += widthStep, pDstData += widthStep) {
+  for (int y = yStart; y <= yEnd; y++, pSrcData += widthStep,
+           pDstData += widthStep, pDirData += widthStep) {
     const uchar* pSrcRow = pSrcData;
     uchar* pDstRow = pDstData;
-    for (int x = xStart; x <= xEnd;
-         x++, pSrcRow += nChannels, pDstRow += nChannels) {
+    uchar* pDirRow = pDirData;
+    for (int x = xStart; x <= xEnd; x++, pSrcRow += nChannels,
+             pDstRow += nChannels, pDirRow += nChannels) {
       for (int i = 0; i < nChannels; i++) {
         float gx = 0, gy = 0;
         for (int k = 0; k < n; k++) {
@@ -302,18 +306,77 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
           gy += kernelY[k] * pSrcRow[i + offsets[k]];
         }
         // edge gradient
-        int g = sqrt(gx * gx + gy * gy); 
-        // edge directions are classified into four group of angles 0, 45, 90, 135 degrees
-        float angle =  round((atan(gx / gy)) / 45) * 45;
+        int g = sqrt(gx * gx + gy * gy);
+        // edge directions are classified into four group of angles 0, 45, 90,
+        // 135 degrees
+        float angle = round((atan(gx / gy)) / 45) * 45;
+
         // if (g > 80) {
         //   pDstRow[0] = 255;
         // }
-        // pDstRow[0] = g;
-        edges.push_back(make_tuple(g, angle));
+        pDstRow[0] = g;
+        pDirRow[0] = angle;
       }
     }
   }
 
+  // restart position
+  pSrcData = (uchar*)srcImage.data + yStart * widthStep + xStart * nChannels;
+  pDstData = (uchar*)dstImage.data + yStart * widthStep + xStart * nChannels;
+  pDirData =
+      (uchar*)gradientDirection.data + yStart * widthStep + xStart * nChannels;
+
+  // Non-maximum Suppression + Hysteresis Thresholding
+  for (int y = yStart; y <= yEnd; y++, pSrcData += widthStep,
+           pDstData += widthStep, pDirData += widthStep) {
+    const uchar* pSrcRow = pSrcData;
+    uchar* pDstRow = pDstData;
+    uchar* pDirRow = pDirData;
+    for (int x = xStart; x <= xEnd; x++, pSrcRow += nChannels,
+             pDstRow += nChannels, pDirRow += nChannels) {
+      uchar* pDstRowN = NULL;
+      uchar* pDstRowS = NULL;
+      if (pDirRow[0] == 0) {
+        pDstRowN = pDstRow - 1;
+        pDstRowS = pDstRow + 1;
+      } else if (pDirRow[0] == 45) {
+        pDstRowN = pDstRow - widthStep + 1;
+        pDstRowS = pDstRow + widthStep - 1;
+      } else if (pDstRow[0] == 90) {
+        pDstRowN = pDstRow - widthStep;
+        pDstRowS = pDstRow + widthStep;
+      } else if (pDstRow[0] == 135) {
+        pDstRowN = pDstRow - widthStep - 1;
+        pDstRowS = pDstRow + widthStep + 1;
+      }
+
+      if (pDstRowN != NULL && pDstRowS != NULL) {
+        if (pDstRow[0] < pDstRowN[0] || pDstRow[0] < pDstRowS[0]) {
+          pDstRow[0] = 0;
+        }
+        if (pDstRow[0] < lowThreshold) {
+          pDstRow[0] = 0;
+        }
+        if (pDstRow[0] > lowThreshold && pDstRow[0] < highThreshold) {
+          uchar* nw = pDstRow - widthStep - 1;
+          uchar* n = pDstRow - widthStep;
+          uchar* ne = pDstRow - widthStep + 1;
+          uchar* w = pDstRow - 1;
+          uchar* e = pDstRow + 1;
+          uchar* sw = pDstRow + widthStep - 1;
+          uchar* s = pDstRow + widthStep;
+          uchar* se = pDstRow + widthStep + 1;
+          if (nw[0] > highThreshold || n[0] > highThreshold ||
+              ne[0] > highThreshold || w[0] > highThreshold ||
+              e[0] > highThreshold || sw[0] > highThreshold ||
+              s[0] > highThreshold || se[0] > highThreshold) {
+          } else {
+            pDstRow[0] = 0;
+          }
+        }
+      }
+    }
+  }
 
   imshow("Show_Image", dstImage);
 }
