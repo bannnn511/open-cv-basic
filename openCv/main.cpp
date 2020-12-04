@@ -36,6 +36,7 @@ void averageFilterOperator(int pos, void*);
 void gaussianFilterOperator(int pos, void*);
 void detectEdge(Mat& srcImage, Mat& dstImage);
 void addNoise(Mat& srcImage);
+void houghTransform(Mat& dst);
 
 // MARK:- MAIN
 int main(int argc, char* argv[]) {
@@ -83,6 +84,7 @@ int main(int argc, char* argv[]) {
       image = getGrayScaleImage(image);
       gaussianFilterOperator(slider, 0);
       detectEdge(image, dst);
+      houghTransform(dst);
     }
   }
 
@@ -260,7 +262,7 @@ void gaussianFilterOperator(int pos, void*) {
 void detectEdge(Mat& srcImage, Mat& dstImage) {
   if (srcImage.data == NULL || srcImage.rows <= 0 || srcImage.cols <= 0) return;
 
-  int highThreshold = 91, lowThreshold = 31;
+  int highThreshold = 200, lowThreshold = 50;
   dstImage = Mat(srcImage.size(), srcImage.type());
   int width = srcImage.cols, height = srcImage.rows;
   int widthStep = srcImage.step[0];
@@ -307,72 +309,76 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
         }
         // edge gradient
         int g = sqrt(gx * gx + gy * gy);
+        g = g > 255 ? 255 : g;
         // edge directions are classified into four group of angles 0, 45, 90,
         // 135 degrees
-        float angle = round((atan(gx / gy)) / 45) * 45;
-
+        int angle = atan(gy / gx);
+        if (gx == 0) {
+          angle = 90;
+        }
+        int theta = int(round(angle * (5.0 / M_PI) + 5)) % 5;
+        theta = theta < 0 ? theta * -1 % 4 : theta % 4;
+        // int theta = angle * 180 / M_PI;
         // if (g > 80) {
         //   pDstRow[0] = 255;
         // }
         pDstRow[0] = g;
-        pDirRow[0] = angle;
+        pDirRow[0] = theta;
       }
     }
   }
 
   // restart position
-  pSrcData = (uchar*)srcImage.data + yStart * widthStep + xStart * nChannels;
+  widthStep = dstImage.step[0];
   pDstData = (uchar*)dstImage.data + yStart * widthStep + xStart * nChannels;
   pDirData =
       (uchar*)gradientDirection.data + yStart * widthStep + xStart * nChannels;
 
   // Non-maximum Suppression + Hysteresis Thresholding
-  for (int y = yStart; y <= yEnd; y++, pSrcData += widthStep,
-           pDstData += widthStep, pDirData += widthStep) {
-    const uchar* pSrcRow = pSrcData;
+  for (int y = yStart; y <= yEnd;
+       y++, pDstData += widthStep, pDirData += widthStep) {
     uchar* pDstRow = pDstData;
     uchar* pDirRow = pDirData;
-    for (int x = xStart; x <= xEnd; x++, pSrcRow += nChannels,
-             pDstRow += nChannels, pDirRow += nChannels) {
-      uchar* pDstRowN = NULL;
-      uchar* pDstRowS = NULL;
+    for (int x = xStart; x <= xEnd;
+         x++, pDstRow += nChannels, pDirRow += nChannels) {
+      int pDstRowN;
+      int pDstRowS;
+      // cout << pDirRow[0] << endl;
       if (pDirRow[0] == 0) {
-        pDstRowN = pDstRow - 1;
-        pDstRowS = pDstRow + 1;
-      } else if (pDirRow[0] == 45) {
-        pDstRowN = pDstRow - widthStep + 1;
-        pDstRowS = pDstRow + widthStep - 1;
-      } else if (pDstRow[0] == 90) {
-        pDstRowN = pDstRow - widthStep;
-        pDstRowS = pDstRow + widthStep;
-      } else if (pDstRow[0] == 135) {
-        pDstRowN = pDstRow - widthStep - 1;
-        pDstRowS = pDstRow + widthStep + 1;
+        pDstRowN = pDstRow[-1];
+        pDstRowS = pDstRow[+1];
+      } else if (pDirRow[0] == 1) {
+        pDstRowN = pDstRow[-widthStep + 1];
+        pDstRowS = pDstRow[+widthStep - 1];
+      } else if (pDstRow[0] == 2) {
+        pDstRowN = pDstRow[-widthStep];
+        pDstRowS = pDstRow[+widthStep];
+      } else if (pDstRow[0] == 3) {
+        pDstRowN = pDstRow[-widthStep - 1];
+        pDstRowS = pDstRow[+widthStep + 1];
       }
 
-      if (pDstRowN != NULL && pDstRowS != NULL) {
-        if (pDstRow[0] < pDstRowN[0] || pDstRow[0] < pDstRowS[0]) {
+      if (pDstRow[0] < pDstRowN || pDstRow[0] < pDstRowS ||
+          pDstRow[0] < lowThreshold) {
+        pDstRow[0] = 0;
+      }
+      // if (pDstRow[0] < lowThreshold) {
+      //   pDstRow[0] = 0;
+      // }
+      if (pDstRow[0] > lowThreshold && pDstRow[0] < highThreshold) {
+        int nw = pDstRow[-widthStep - 1];
+        int n = pDstRow[-widthStep];
+        int ne = pDstRow[-widthStep + 1];
+        int w = pDstRow[-1];
+        int e = pDstRow[+1];
+        int sw = pDstRow[+widthStep - 1];
+        int s = pDstRow[+widthStep];
+        int se = pDstRow[+widthStep + 1];
+        if (nw > highThreshold || n > highThreshold || ne > highThreshold ||
+            w > highThreshold || e > highThreshold || sw > highThreshold ||
+            s > highThreshold || se > highThreshold) {
+        } else {
           pDstRow[0] = 0;
-        }
-        if (pDstRow[0] < lowThreshold) {
-          pDstRow[0] = 0;
-        }
-        if (pDstRow[0] > lowThreshold && pDstRow[0] < highThreshold) {
-          uchar* nw = pDstRow - widthStep - 1;
-          uchar* n = pDstRow - widthStep;
-          uchar* ne = pDstRow - widthStep + 1;
-          uchar* w = pDstRow - 1;
-          uchar* e = pDstRow + 1;
-          uchar* sw = pDstRow + widthStep - 1;
-          uchar* s = pDstRow + widthStep;
-          uchar* se = pDstRow + widthStep + 1;
-          if (nw[0] > highThreshold || n[0] > highThreshold ||
-              ne[0] > highThreshold || w[0] > highThreshold ||
-              e[0] > highThreshold || sw[0] > highThreshold ||
-              s[0] > highThreshold || se[0] > highThreshold) {
-          } else {
-            pDstRow[0] = 0;
-          }
         }
       }
     }
@@ -380,10 +386,34 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
 
   imshow("Show_Image", dstImage);
 }
-
 void addNoise(Mat& srcImage) {
   Mat noise = Mat(srcImage.size(), srcImage.type());
   randn(noise, 0, 20);
   srcImage = srcImage + noise;
   imshow("Show_Image", srcImage);
+}
+
+void houghTransform(Mat& dstImage) {
+  Mat hough, cdst;
+  hough = getGrayScaleImage(dstImage);
+  // Copy edges to the images that will display the results in BGR
+  cvtColor(hough, cdst, COLOR_GRAY2BGR);
+  // Standard Hough Line Transform
+  vector<Vec2f> lines;  // will hold the results of the detection
+  HoughLines(cdst, lines, 1, CV_PI / 180, 150, 0,
+             0);  // runs the actual detection
+  // Draw the lines
+  for (size_t i = 0; i < lines.size(); i++) {
+    float rho = lines[i][0], theta = lines[i][1];
+    Point pt1, pt2;
+    double a = cos(theta), b = sin(theta);
+    double x0 = a * rho, y0 = b * rho;
+    pt1.x = cvRound(x0 + 1000 * (-b));
+    pt1.y = cvRound(y0 + 1000 * (a));
+    pt2.x = cvRound(x0 - 1000 * (-b));
+    pt2.y = cvRound(y0 - 1000 * (a));
+    line(cdst, pt1, pt2, Scalar(0, 0, 255), 3, LINE_AA);
+  }
+
+  imshow("Show_Image", cdst);
 }
