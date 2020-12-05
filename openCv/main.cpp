@@ -85,13 +85,13 @@ int main(int argc, char* argv[]) {
       addNoise(image);
       averageFilterOperator(slider, 0);
       detectEdge(image, dst);
-      houghTransform(dst);
     } else if (strcmp(argv[1], "-radon") == 0) {
       slider = 7;
       // image = getGrayScaleImage(image);
       addNoise(image);
       averageFilterOperator(slider, 0);
       detectEdge(image, dst);
+      houghTransform(dst);
     }
   }
 
