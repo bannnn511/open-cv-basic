@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
   namedWindow("Show_Image");
   if (argv[1] != NULL) {
     // image = imread("/Users/apple/Documents/Stduy/openCv/testOpenCv/ic2.tif");
-    image = imread(argv[2]);
+    image = imread(argv[2], 0);
     if (image.data == NULL) {
       cout << "Need image location" << endl;
     }
@@ -80,11 +80,18 @@ int main(int argc, char* argv[]) {
       image = getGrayScaleImage(image);
       averageFilterOperator(slider, 0);
     } else if (strcmp(argv[1], "-edges") == 0) {
-      slider = 3;
-      image = getGrayScaleImage(image);
-      gaussianFilterOperator(slider, 0);
+      slider = 7;
+      // image = getGrayScaleImage(image);
+      addNoise(image);
+      averageFilterOperator(slider, 0);
       detectEdge(image, dst);
       houghTransform(dst);
+    } else if (strcmp(argv[1], "-radon") == 0) {
+      slider = 7;
+      // image = getGrayScaleImage(image);
+      addNoise(image);
+      averageFilterOperator(slider, 0);
+      detectEdge(image, dst);
     }
   }
 
@@ -262,7 +269,7 @@ void gaussianFilterOperator(int pos, void*) {
 void detectEdge(Mat& srcImage, Mat& dstImage) {
   if (srcImage.data == NULL || srcImage.rows <= 0 || srcImage.cols <= 0) return;
 
-  int highThreshold = 200, lowThreshold = 50;
+  int highThreshold = 200, lowThreshold = 30;
   dstImage = Mat(srcImage.size(), srcImage.type());
   int width = srcImage.cols, height = srcImage.rows;
   int widthStep = srcImage.step[0];
@@ -329,18 +336,23 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
   }
 
   // restart position
+  Mat canny = Mat(dstImage.size(), dstImage.type());
   widthStep = dstImage.step[0];
   pDstData = (uchar*)dstImage.data + yStart * widthStep + xStart * nChannels;
   pDirData =
       (uchar*)gradientDirection.data + yStart * widthStep + xStart * nChannels;
+  uchar* pCannydata =
+      (uchar*)canny.data + yStart * widthStep + xStart * nChannels;
 
   // Non-maximum Suppression + Hysteresis Thresholding
-  for (int y = yStart; y <= yEnd;
-       y++, pDstData += widthStep, pDirData += widthStep) {
+  for (int y = yStart; y <= yEnd; y++, pDstData += widthStep,
+           pDirData += widthStep, pCannydata += widthStep) {
     uchar* pDstRow = pDstData;
     uchar* pDirRow = pDirData;
-    for (int x = xStart; x <= xEnd;
-         x++, pDstRow += nChannels, pDirRow += nChannels) {
+    uchar* pCannyRow = pCannydata;
+
+    for (int x = xStart; x <= xEnd; x++, pDstRow += nChannels,
+             pDirRow += nChannels, pCannyRow += nChannels) {
       int pDstRowN;
       int pDstRowS;
       // cout << pDirRow[0] << endl;
@@ -358,13 +370,18 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
         pDstRowS = pDstRow[+widthStep + 1];
       }
 
-      if (pDstRow[0] < pDstRowN || pDstRow[0] < pDstRowS ||
-          pDstRow[0] < lowThreshold) {
+      if (pDstRow[0] < pDstRowN || pDstRow[0] < pDstRowS) {
+        pDstRow[0] = 0;
+        // pCannyRow[0] = 0;
+      } else if (pDstRow[0] > pDstRowN && pDstRow[0] > pDstRowS) {
+        pCannyRow[0] = pDstRow[0];
+      }
+
+      if (pDstRow[0] < lowThreshold) {
+        pCannyRow[0] = 0;
         pDstRow[0] = 0;
       }
-      // if (pDstRow[0] < lowThreshold) {
-      //   pDstRow[0] = 0;
-      // }
+
       if (pDstRow[0] > lowThreshold && pDstRow[0] < highThreshold) {
         int nw = pDstRow[-widthStep - 1];
         int n = pDstRow[-widthStep];
@@ -377,18 +394,20 @@ void detectEdge(Mat& srcImage, Mat& dstImage) {
         if (nw > highThreshold || n > highThreshold || ne > highThreshold ||
             w > highThreshold || e > highThreshold || sw > highThreshold ||
             s > highThreshold || se > highThreshold) {
+          // pCannyRow[0] = 255;
         } else {
           pDstRow[0] = 0;
+          // pCannyRow[0] = 0;
         }
       }
     }
   }
-
+  // imshow("Show_Image", canny);
   imshow("Show_Image", dstImage);
 }
 void addNoise(Mat& srcImage) {
   Mat noise = Mat(srcImage.size(), srcImage.type());
-  randn(noise, 0, 20);
+  randn(noise, 0, 0.1);
   srcImage = srcImage + noise;
   imshow("Show_Image", srcImage);
 }
@@ -400,7 +419,7 @@ void houghTransform(Mat& dstImage) {
   cvtColor(hough, cdst, COLOR_GRAY2BGR);
   // Standard Hough Line Transform
   vector<Vec2f> lines;  // will hold the results of the detection
-  HoughLines(cdst, lines, 1, CV_PI / 180, 150, 0,
+  HoughLines(dstImage, lines, 1, CV_PI / 180, 150, 0,
              0);  // runs the actual detection
   // Draw the lines
   for (size_t i = 0; i < lines.size(); i++) {
